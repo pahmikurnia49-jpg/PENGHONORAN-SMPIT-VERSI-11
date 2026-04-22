@@ -927,5 +927,28 @@
             reader.readAsText(file);
         }
     </script>
+    <script type="module">
+  // Import the functions you need from the SDKs you need
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-analytics.js";
+  // TODO: Add SDKs for Firebase products that you want to use
+  // https://firebase.google.com/docs/web/setup#available-libraries
+
+  // Your web app's Firebase configuration
+  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+  const firebaseConfig = {
+    apiKey: "AIzaSyAWgg5Y3atUv6nguojJh1G8kCx8cMhSlp0",
+    authDomain: "penghonoran-guru.firebaseapp.com",
+    projectId: "penghonoran-guru",
+    storageBucket: "penghonoran-guru.firebasestorage.app",
+    messagingSenderId: "755844139922",
+    appId: "1:755844139922:web:e637f1838f99ce4f158f4b",
+    measurementId: "G-8LRBLWQN8Z"
+  };
+
+  // Initialize Firebase
+  const app = initializeApp(firebaseConfig);
+  const analytics = getAnalytics(app);
+</script>
 </body>
 </html>
