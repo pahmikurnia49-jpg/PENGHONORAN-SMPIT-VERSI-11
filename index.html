@@ -375,12 +375,15 @@
         const bulanNama = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
         let currentNotaFilename = "Slip.png";
         let expenseChart = null;
+        
+        // [MODIFIKASI] CACHE SEMENTARA UNTUK FIREBASE
+        window.db_guru_cache = JSON.parse(localStorage.getItem('db_guru')) || [];
 
         window.onload = function() {
             initClock();
             initOptions();
             loadPejabatToForm();
-            loadPilihanGuru(); 
+            // loadPilihanGuru() akan dipanggil otomatis setelah data Firebase ter-load
         }
 
         function initClock() {
@@ -412,7 +415,6 @@
             } else Swal.fire({icon: 'error', title: 'Login Gagal', text: 'Salah woy!'});
         }
         
-        // --- FITUR LUPA PASSWORD (BARU) ---
         function fiturLupaPassword() {
             Swal.fire({
                 title: 'Lupa Password?',
@@ -425,14 +427,12 @@
             }).then((result) => {
                 if (result.isConfirmed) {
                     if (result.value === 'reset123') {
-                        // KEMBALIKAN KE DEFAULT
                         localStorage.setItem('app_config', JSON.stringify({user:'admin', pass:'123'}));
                         Swal.fire({
                             icon: 'success',
                             title: 'Password Direset!',
                             html: 'Silakan login dengan:<br>User: <b>admin</b><br>Pass: <b>123</b>'
                         });
-                        // Isi otomatis form biar gampang
                         document.getElementById('login-user').value = 'admin';
                         document.getElementById('login-pass').value = '123';
                     } else {
@@ -464,7 +464,6 @@
             if(c.bendahara) document.getElementById('set-bendahara').value = c.bendahara;
         }
 
-        // --- SISTEM NAVIGASI BARU (PISAH LOGIKA RESET) ---
         function bukaHalaman(id) {
             document.querySelectorAll('[id^="sec-"]').forEach(el => el.classList.add('hidden'));
             document.getElementById('sec-' + id).classList.remove('hidden');
@@ -476,15 +475,17 @@
             if(id === 'dashboard') updateDashboard();
         }
 
-        // FUNGSI KHUSUS TOMBOL SIDEBAR "INPUT HONOR" (RESET)
         function bukaInputBaru() {
             bukaHalaman('input-honor');
             loadPilihanGuru();
             resetFormHonor();
         }
 
-        function getGuru() { return JSON.parse(localStorage.getItem('db_guru')) || []; }
-        function simpanGuru() {
+        // [MODIFIKASI] GET GURU SEKARANG AMBIL DARI CACHE FIREBASE
+        function getGuru() { return window.db_guru_cache; } 
+
+        // [MODIFIKASI] SIMPAN DATA GURU LANGSUNG KE FIREBASE
+        async function simpanGuru() {
             let id = document.getElementById('guru-edit-id').value;
             let nama = document.getElementById('guru-nama').value;
             let kelas = document.getElementById('guru-kelas').value;
@@ -494,17 +495,27 @@
             
             if(!nama) return Swal.fire('Gagal', 'Nama wajib diisi', 'warning');
 
-            let db = getGuru();
-            if(id) {
-                let idx = db.findIndex(g => g.id == id);
-                if(idx !== -1) db[idx] = { id: parseInt(id), nama, kelas, mapel, jabatan, gapok: parseInt(gapok)||0 };
-            } else {
-                db.push({ id: Date.now(), nama, kelas, mapel, jabatan, gapok: parseInt(gapok)||0 });
+            let dataGuruBaru = { 
+                id: id ? parseInt(id) : Date.now(), 
+                nama, kelas, mapel, jabatan, 
+                gapok: parseInt(gapok)||0 
+            };
+
+            try {
+                Swal.fire({title: 'Menyimpan ke Firebase...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+                
+                // Kirim data ke Firebase
+                await window.fsSetDoc(window.fsDoc(window.fsDb, "guru", dataGuruBaru.id.toString()), dataGuruBaru);
+                
+                // Refresh data web dengan data terbaru dari Firebase
+                await window.initFirebaseData();
+                
+                Swal.fire({icon:'success', title:'Berhasil', text:'Data Guru Tersimpan di Server Google', timer:1500, showConfirmButton:false});
+                batalEditGuru();
+            } catch(error) {
+                Swal.fire('Error', 'Gagal menyimpan ke Firebase. Cek koneksi internet.', 'error');
+                console.error(error);
             }
-            localStorage.setItem('db_guru', JSON.stringify(db));
-            Swal.fire({icon:'success', title:'Berhasil', text:'Data Guru Tersimpan', timer:1500, showConfirmButton:false});
-            batalEditGuru();
-            renderTabelGuru();
         }
         
         function renderTabelGuru() {
@@ -554,13 +565,21 @@
             document.getElementById('btn-batal-guru').classList.add('hidden');
         }
 
+        // [MODIFIKASI] HAPUS GURU DARI FIREBASE
         function hapusGuru(id) {
-            Swal.fire({title:'Hapus Guru?', icon:'warning', showCancelButton:true, confirmButtonColor:'#d33'}).then((r) => {
+            Swal.fire({title:'Hapus Guru?', text:'Akan dihapus permanen dari server!', icon:'warning', showCancelButton:true, confirmButtonColor:'#d33'}).then(async (r) => {
                 if (r.isConfirmed) {
-                    let db = getGuru().filter(x => x.id !== id);
-                    localStorage.setItem('db_guru', JSON.stringify(db));
-                    renderTabelGuru();
-                    Swal.fire('Terhapus!', '', 'success');
+                    try {
+                        Swal.fire({title: 'Menghapus data...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+                        
+                        await window.fsDeleteDoc(window.fsDoc(window.fsDb, "guru", id.toString()));
+                        await window.initFirebaseData(); 
+                        
+                        Swal.fire('Terhapus!', 'Data sudah hilang dari server Firebase.', 'success');
+                    } catch(error) {
+                        Swal.fire('Error', 'Gagal menghapus dari Firebase', 'error');
+                        console.error(error);
+                    }
                 }
             });
         }
@@ -579,6 +598,7 @@
             }
         }
 
+        // ==== BAGIAN HONOR MASIH PAKAI LOCALSTORAGE (Belum Diubah) ====
         function renderKalender() {
             let container = document.getElementById('grid-kalender'); container.innerHTML = '';
             let tahun = parseInt(document.getElementById('input-tahun').value);
@@ -683,20 +703,15 @@
             renderKalender();
         }
 
-        // --- FUNGSI EDIT DATA YANG SUDAH DI-FIX ---
         function editData(id) {
             let item = (JSON.parse(localStorage.getItem('db_honor'))||[]).find(x=>x.id==id); if(!item) return;
             
-            // 1. Pindah Halaman TANPA RESET
             bukaHalaman('input-honor');
-            
-            // 2. Load Guru & Set Value
             loadPilihanGuru(); 
             let sel = document.getElementById('input-pilih-guru');
             sel.value = item.id_guru; 
             sel.disabled = true;
 
-            // 3. Set UI Mode Edit
             document.getElementById('edit-id-transaksi').value = item.id;
             document.getElementById('status-mode').innerText = "Mode Edit: " + item.nama_guru; 
             document.getElementById('status-mode').classList.replace('bg-primary', 'bg-warning');
@@ -927,44 +942,71 @@
             reader.readAsText(file);
         }
     </script>
-   <script type="module">
-  // 1. Import Core, Analytics, dan Firestore
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.1/firebase-app.js";
-  import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.12.1/firebase-analytics.js";
-  import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/10.12.1/firebase-firestore.js";
-  
-  // 2. Konfigurasi Firebase Kamu (Sudah disesuaikan dengan milikmu)
-  const firebaseConfig = {
-    apiKey: "AIzaSyAWgg5Y3atUv6nguojJh1G8kCx8cMhSlp0",
-    authDomain: "penghonoran-guru.firebaseapp.com",
-    projectId: "penghonoran-guru",
-    storageBucket: "penghonoran-guru.firebasestorage.app",
-    messagingSenderId: "755844139922",
-    appId: "1:755844139922:web:e637f1838f99ce4f158f4b",
-    measurementId: "G-8LRBLWQN8Z"
-  };
+    
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.1/firebase-app.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.12.1/firebase-analytics.js";
+        import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.1/firebase-firestore.js";
+        
+        const firebaseConfig = {
+            apiKey: "AIzaSyAWgg5Y3atUv6nguojJh1G8kCx8cMhSlp0",
+            authDomain: "penghonoran-guru.firebaseapp.com",
+            projectId: "penghonoran-guru",
+            storageBucket: "penghonoran-guru.firebasestorage.app",
+            messagingSenderId: "755844139922",
+            appId: "1:755844139922:web:e637f1838f99ce4f158f4b",
+            measurementId: "G-8LRBLWQN8Z"
+        };
 
-  // 3. Inisialisasi Firebase & Firestore
-  const app = initializeApp(firebaseConfig);
-  const analytics = getAnalytics(app);
-  const db = getFirestore(app);
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
 
-  // 4. Fungsi Tes Simpan Data
-  async function tesSimpanData() {
-    try {
-      const docRef = await addDoc(collection(db, "tes_koneksi"), {
-        pesan: "Halo Firebase, ini data pertama dari webku!",
-        waktu: new Date()
-      });
-      console.log("Sukses! ID Data: ", docRef.id);
-      alert("Hore! Koneksi Web ke Firebase Berhasil!");
-    } catch (e) {
-      console.error("Error menambah data: ", e);
-    }
-  }
+        // Jadikan Firebase Global agar bisa dipanggil fungsi lain
+        window.fsDb = db;
+        window.fsCollection = collection;
+        window.fsGetDocs = getDocs;
+        window.fsDoc = doc;
+        window.fsSetDoc = setDoc;
+        window.fsDeleteDoc = deleteDoc;
 
-  // Jalankan fungsinya satu kali saat web dibuka
-  tesSimpanData();
-</script>
+        // Fungsi Penarik Data Otomatis & Migrasi
+        window.initFirebaseData = async function() {
+            try {
+                const guruSnap = await window.fsGetDocs(window.fsCollection(window.fsDb, "guru"));
+                window.db_guru_cache = [];
+                
+                if (guruSnap.empty) {
+                    // JIKA FIREBASE KOSONG, CEK APAKAH ADA DATA LAMA DI LOKAL.
+                    // KALAU ADA, PINDAHIN OTOMATIS KE FIREBASE! (MAGIC 🪄)
+                    let lokalData = JSON.parse(localStorage.getItem('db_guru')) || [];
+                    if (lokalData.length > 0) {
+                        console.log("Mendeteksi data lama. Memulai auto-migrasi ke Firebase...");
+                        for(let g of lokalData) {
+                            await window.fsSetDoc(window.fsDoc(window.fsDb, "guru", g.id.toString()), g);
+                            window.db_guru_cache.push(g);
+                        }
+                        console.log("Migrasi sukses!");
+                        Swal.fire({toast:true, position:'top-end', icon:'success', title:'Data Lama Dipindahkan ke Firebase!', showConfirmButton:false, timer:3000});
+                    }
+                } else {
+                    // Kalau Firebase ada isinya, sedot isinya
+                    guruSnap.forEach(doc => {
+                        window.db_guru_cache.push(doc.data());
+                    });
+                }
+                
+                // Segarkan tampilan
+                if(typeof renderTabelGuru === "function") renderTabelGuru();
+                if(typeof loadPilihanGuru === "function") loadPilihanGuru();
+                if(typeof updateDashboard === "function") updateDashboard();
+                
+            } catch(e) {
+                console.error("Gagal menarik data dari Firebase", e);
+            }
+        };
+
+        // Langsung jalankan saat web terbuka
+        window.initFirebaseData();
+    </script>
 </body>
 </html>
